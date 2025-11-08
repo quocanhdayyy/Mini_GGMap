@@ -21,8 +21,6 @@ def register_blueprints(app):
     from app.routes.api import api_bp
     app.register_blueprint(api_bp, url_prefix='/api')
     
-    # Admin routes (data management)
-    from app.routes.admin import admin_bp
-    app.register_blueprint(admin_bp, url_prefix='/admin')
+    # Admin routes removed
     
     app.logger.info("All blueprints registered")

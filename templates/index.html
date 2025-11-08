@@ -1,0 +1,294 @@
+{% extends "base.html" %}
+
+{% block title %}Mini Google Maps - Trang chủ{% endblock %}
+
+{% block content %}
+<div class="container-fluid p-0">
+    <!-- Control Panel -->
+    <div class="row g-0">
+        <div class="col-md-3 bg-light p-3" style="height: calc(100vh - 76px); overflow-y: auto;">
+            <div class="card">
+                <div class="card-header">
+                    <h5 class="mb-0">🎯 Tìm đường</h5>
+                </div>
+                <div class="card-body">
+                    <!-- Vehicle Selection -->
+                    <div class="mb-3">
+                        <label for="vehicle" class="form-label">Phương tiện:</label>
+                        <select class="form-select" id="vehicle">
+                            {% for vehicle in config.vehicles %}
+                            <option value="{{ vehicle }}">
+                                {% if vehicle == 'car' %}🚗 Ô tô
+                                {% elif vehicle == 'motor' %}🏍️ Xe máy
+                                {% elif vehicle == 'foot' %}🚶 Đi bộ
+                                {% endif %}
+                            </option>
+                            {% endfor %}
+                        </select>
+                    </div>
+
+                    <!-- Algorithm Selection -->
+                    <div class="mb-3">
+                        <label for="algorithm" class="form-label">Thuật toán:</label>
+                        <select class="form-select" id="algorithm">
+                            {% for algo in config.algorithms %}
+                            <option value="{{ algo }}">
+                                {% if algo == 'dijkstra' %}Dijkstra
+                                {% elif algo == 'a_star' %}A* (A-Star)
+                                {% elif algo == 'bfs' %}BFS (Breadth-First)
+                                {% elif algo == 'dfs' %}DFS (Depth-First)
+                                {% elif algo == 'greedy' %}Greedy Best-First
+                                {% endif %}
+                            </option>
+                            {% endfor %}
+                        </select>
+                    </div>
+
+                    <!-- Start/End Points -->
+                    <div class="mb-3">
+                        <label class="form-label">Điểm bắt đầu:</label>
+                        <div class="input-group">
+                            <input type="text" class="form-control" id="start-point" placeholder="Click trên bản đồ">
+                            <button class="btn btn-outline-secondary" type="button" id="clear-start">✖</button>
+                        </div>
+                    </div>
+
+                    <div class="mb-3">
+                        <label class="form-label">Điểm đến:</label>
+                        <div class="input-group">
+                            <input type="text" class="form-control" id="end-point" placeholder="Click trên bản đồ">
+                            <button class="btn btn-outline-secondary" type="button" id="clear-end">✖</button>
+                        </div>
+                    </div>
+
+                    <!-- Find Path Button -->
+                    <button class="btn btn-primary w-100 mb-3" id="find-path">
+                        🔍 Tìm đường
+                    </button>
+
+                    <!-- Results -->
+                    <div id="results" class="d-none">
+                        <div class="card">
+                            <div class="card-header">
+                                <h6 class="mb-0">📊 Kết quả</h6>
+                            </div>
+                            <div class="card-body">
+                                <div class="row">
+                                    <div class="col-6">
+                                        <small class="text-muted">Khoảng cách:</small>
+                                        <div id="distance">-</div>
+                                    </div>
+                                    <div class="col-6">
+                                        <small class="text-muted">Thời gian:</small>
+                                        <div id="duration">-</div>
+                                    </div>
+                                </div>
+                                <div class="mt-2">
+                                    <small class="text-muted">Thuật toán:</small>
+                                    <div id="algorithm-info">-</div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Instructions -->
+            <div class="card mt-3">
+                <div class="card-header">
+                    <h6 class="mb-0">💡 Hướng dẫn</h6>
+                </div>
+                <div class="card-body">
+                    <small>
+                        1. Chọn phương tiện và thuật toán<br>
+                        2. Click trên bản đồ để chọn điểm bắt đầu và đến<br>
+                        3. Nhấn "Tìm đường" để xem kết quả<br>
+                        4. Đường đi sẽ được hiển thị trên bản đồ
+                    </small>
+                </div>
+            </div>
+        </div>
+
+        <!-- Map Container -->
+        <div class="col-md-9">
+            <div id="map" style="height: calc(100vh - 76px);"></div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+    // Global variables
+    let map;
+    let startMarker, endMarker;
+    let pathLayer;
+    
+    // Initialize map
+    function initMap() {
+        const center = [{{ config.map_center[0] }}, {{ config.map_center[1] }}];
+        const zoom = {{ config.zoom }};
+        
+        map = L.map('map').setView(center, zoom);
+        
+        // Add tile layer
+        L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+            attribution: '© OpenStreetMap contributors'
+        }).addTo(map);
+        
+        // Add click handler
+        map.on('click', onMapClick);
+    }
+    
+    // Handle map clicks
+    function onMapClick(e) {
+        const lat = e.latlng.lat;
+        const lng = e.latlng.lng;
+        
+        if (!startMarker) {
+            setStartPoint(lat, lng);
+        } else if (!endMarker) {
+            setEndPoint(lat, lng);
+        }
+    }
+    
+    // Set start point
+    function setStartPoint(lat, lng) {
+        if (startMarker) {
+            map.removeLayer(startMarker);
+        }
+        
+        startMarker = L.marker([lat, lng], {
+            icon: L.icon({
+                iconUrl: 'https://raw.githubusercontent.com/pointhi/leaflet-color-markers/master/img/marker-icon-green.png',
+                shadowUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/0.7.7/images/marker-shadow.png',
+                iconSize: [25, 41],
+                iconAnchor: [12, 41],
+                popupAnchor: [1, -34],
+                shadowSize: [41, 41]
+            })
+        }).addTo(map);
+        
+        document.getElementById('start-point').value = `${lat.toFixed(6)}, ${lng.toFixed(6)}`;
+    }
+    
+    // Set end point
+    function setEndPoint(lat, lng) {
+        if (endMarker) {
+            map.removeLayer(endMarker);
+        }
+        
+        endMarker = L.marker([lat, lng], {
+            icon: L.icon({
+                iconUrl: 'https://raw.githubusercontent.com/pointhi/leaflet-color-markers/master/img/marker-icon-red.png',
+                shadowUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/0.7.7/images/marker-shadow.png',
+                iconSize: [25, 41],
+                iconAnchor: [12, 41],
+                popupAnchor: [1, -34],
+                shadowSize: [41, 41]
+            })
+        }).addTo(map);
+        
+        document.getElementById('end-point').value = `${lat.toFixed(6)}, ${lng.toFixed(6)}`;
+    }
+    
+    // Find path
+    async function findPath() {
+        if (!startMarker || !endMarker) {
+            alert('Vui lòng chọn điểm bắt đầu và điểm đến!');
+            return;
+        }
+        
+        const vehicle = document.getElementById('vehicle').value;
+        const algorithm = document.getElementById('algorithm').value;
+        
+        const requestData = {
+            start: {
+                lat: startMarker.getLatLng().lat,
+                lng: startMarker.getLatLng().lng
+            },
+            end: {
+                lat: endMarker.getLatLng().lat,
+                lng: endMarker.getLatLng().lng
+            },
+            vehicle: vehicle,
+            algorithm: algorithm
+        };
+        
+        try {
+            const response = await fetch('/api/pathfinding', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify(requestData)
+            });
+            
+            const result = await response.json();
+            
+            if (result.status === 'success') {
+                displayPath(result);
+                showResults(result);
+            } else {
+                alert('Lỗi: ' + result.message);
+            }
+        } catch (error) {
+            console.error('Error:', error);
+            alert('Không thể tìm đường. Vui lòng thử lại!');
+        }
+    }
+    
+    // Display path on map
+    function displayPath(result) {
+        if (pathLayer) {
+            map.removeLayer(pathLayer);
+        }
+        
+        pathLayer = L.polyline(result.path, {
+            color: 'blue',
+            weight: 5,
+            opacity: 0.7
+        }).addTo(map);
+        
+        // Fit map to show entire path
+        const group = new L.featureGroup([startMarker, endMarker, pathLayer]);
+        map.fitBounds(group.getBounds().pad(0.1));
+    }
+    
+    // Show results
+    function showResults(result) {
+        document.getElementById('distance').textContent = `${(result.distance / 1000).toFixed(2)} km`;
+        document.getElementById('duration').textContent = `${Math.round(result.duration / 60)} phút`;
+        document.getElementById('algorithm-info').textContent = 
+            `${result.algorithm_info.algorithm} (${result.algorithm_info.nodes_explored} nodes, ${result.algorithm_info.execution_time}s)`;
+        
+        document.getElementById('results').classList.remove('d-none');
+    }
+    
+    // Clear functions
+    function clearStart() {
+        if (startMarker) {
+            map.removeLayer(startMarker);
+            startMarker = null;
+        }
+        document.getElementById('start-point').value = '';
+    }
+    
+    function clearEnd() {
+        if (endMarker) {
+            map.removeLayer(endMarker);
+            endMarker = null;
+        }
+        document.getElementById('end-point').value = '';
+    }
+    
+    // Event listeners
+    document.addEventListener('DOMContentLoaded', function() {
+        initMap();
+        
+        document.getElementById('find-path').addEventListener('click', findPath);
+        document.getElementById('clear-start').addEventListener('click', clearStart);
+        document.getElementById('clear-end').addEventListener('click', clearEnd);
+    });
+</script>
+{% endblock %}
